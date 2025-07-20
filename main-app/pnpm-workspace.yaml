@@ -1,0 +1,7 @@
+onlyBuiltDependencies:
+  - '@tailwindcss/oxide'
+  - bufferutil
+  - keccak
+  - protobufjs
+  - sharp
+  - utf-8-validate
