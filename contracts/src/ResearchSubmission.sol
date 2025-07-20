@@ -2,22 +2,22 @@
 pragma solidity ^0.8.19;
 
 contract ResearchSubmission {
-    uint256 public studyCount;
-    address public agent;
-
-    constructor(address _agent) {
-        agent = _agent;
-    }
+    enum ResearchStatus { Submitted, Funded, UnderReview, Validated }
 
     struct Study {
         uint256 id;
         address researcher;
-        string ipfsHash;
-        string metadataURI;
+        string dataURI;          
+        string metadataJSON;     
         uint256 timestamp;
+        ResearchStatus status;
+        address funder;
+        address validator;
+        string reportURI;
         uint8 aiReadinessScore;
-        bool scoreSet;
     }
+
+    uint256 public studyCount;
 
     mapping(uint256 => Study) public studies;
     mapping(address => uint256[]) public researcherStudies;
@@ -25,48 +25,76 @@ contract ResearchSubmission {
     event StudySubmitted(
         uint256 indexed studyId,
         address indexed researcher,
-        string ipfsHash,
-        string metadataURI,
-        uint256 timestamp
+        string dataURI,
+        string metadataJSON,
+        uint8 aiReadinessScore
     );
 
-    event AIReadinessScoreSet(
-        uint256 indexed studyId,
-        uint8 score
-    );
+    event StudyFunded(uint256 indexed studyId, address indexed funder);
+    event StatusUpdated(uint256 indexed studyId, ResearchStatus newStatus);
+    event ValidationSubmitted(uint256 indexed studyId, address indexed validator, string reportURI);
 
-    modifier onlyagent() {
-        require(msg.sender == agent, "Not authorized");
-        _;
-    }
-
-    function submitStudy(string calldata ipfsHash, string calldata metadataURI) external returns (uint256) {
-        require(bytes(ipfsHash).length > 0, "Missing IPFS hash");
-        require(bytes(metadataURI).length > 0, "Missing metadata");
-
+    function submitStudy(
+        string calldata dataURI,
+        string calldata metadataJSON,
+        uint8 aiReadinessScore
+    ) external returns (uint256) {
         studyCount++;
         studies[studyCount] = Study({
             id: studyCount,
             researcher: msg.sender,
-            ipfsHash: ipfsHash,
-            metadataURI: metadataURI,
+            dataURI: dataURI,
+            metadataJSON: metadataJSON,
             timestamp: block.timestamp,
-            aiReadinessScore: 0,
-            scoreSet: false
+            status: ResearchStatus.Submitted,
+            funder: address(0),
+            validator: address(0),
+            reportURI: "",
+            aiReadinessScore: aiReadinessScore
         });
 
         researcherStudies[msg.sender].push(studyCount);
-        emit StudySubmitted(studyCount, msg.sender, ipfsHash, metadataURI, block.timestamp);
+
+        emit StudySubmitted(studyCount, msg.sender, dataURI, metadataJSON, aiReadinessScore);
         return studyCount;
     }
 
-    function setAIReadinessScore(uint256 studyId, uint8 score) external onlyagent {
-        require(score <= 100, "Score must be 0-100");
-        require(!studies[studyId].scoreSet, "Already scored");
+    function fundStudy(uint256 studyId) external payable {
+        Study storage study = studies[studyId];
+        require(study.status == ResearchStatus.Submitted, "Not fundable");
+        require(msg.value > 0, "No ETH sent");
 
-        studies[studyId].aiReadinessScore = score;
-        studies[studyId].scoreSet = true;
-        emit AIReadinessScoreSet(studyId, score);
+        study.funder = msg.sender;
+        study.status = ResearchStatus.Funded;
+
+        emit StudyFunded(studyId, msg.sender);
+        emit StatusUpdated(studyId, ResearchStatus.Funded);
+    }
+
+    // Anyone can submit validation (or you can add your own access control here)
+    function submitValidation(
+        uint256 studyId,
+        address validator,
+        string calldata reportURI
+    ) external {
+        Study storage study = studies[studyId];
+        require(study.status == ResearchStatus.Funded, "Not ready for validation");
+
+        study.validator = validator;
+        study.reportURI = reportURI;
+        study.status = ResearchStatus.Validated;
+
+        emit ValidationSubmitted(studyId, validator, reportURI);
+        emit StatusUpdated(studyId, ResearchStatus.Validated);
+    }
+
+    // Anyone can mark under review (or restrict as needed)
+    function markUnderReview(uint256 studyId) external {
+        Study storage study = studies[studyId];
+        require(study.status == ResearchStatus.Funded, "Not funded");
+        study.status = ResearchStatus.UnderReview;
+
+        emit StatusUpdated(studyId, ResearchStatus.UnderReview);
     }
 
     function getStudiesByResearcher(address researcher) external view returns (uint256[] memory) {
@@ -75,10 +103,5 @@ contract ResearchSubmission {
 
     function getStudy(uint256 studyId) external view returns (Study memory) {
         return studies[studyId];
-    }
-
-    function updateagent(address newAgent) external {
-        require(msg.sender == agent, "Only current agent can update");
-        agent = newAgent;
     }
 }

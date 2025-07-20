@@ -1,7 +1,0 @@
-{
-  "metadata": {
-    "title": "Carbon Emission Forecasting",
-    "author": "Dr. S. Rajan",
-    "description": "This experiment uses LSTM to predict carbon emissions based on historical industrial activity data."
-  }
-}
